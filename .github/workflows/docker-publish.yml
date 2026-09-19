@@ -34,20 +34,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to Docker Hub
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
             ${{ env.GHCR_IMAGE }}
-            ${{ secrets.DOCKERHUB_USERNAME != '' && format('docker.io/{0}/9router', secrets.DOCKERHUB_USERNAME) || '' }}
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=0.5.81
