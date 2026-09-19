@@ -1,18 +1,16 @@
-name: Build and Push Docker Image
+name: Build Docker Image (arm64)
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - master
     tags:
       - "v*"
-  workflow_dispatch:
 
 env:
   GHCR_IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  build-and-push:
+  build-arm64:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -41,10 +39,10 @@ jobs:
           images: |
             ${{ env.GHCR_IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=0.5.81
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch
+            type=semver,pattern={{version}}-arm64
+            type=raw,value=0.5.81-arm64
+            type=raw,value=arm64
+            type=ref,event=branch,suffix=-arm64
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -53,8 +51,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
-          platforms: linux/amd64,linux/arm64
+          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache-arm64
+          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache-arm64,mode=max
+          platforms: linux/arm64
           provenance: false
           sbom: false
