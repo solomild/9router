@@ -1,0 +1,104 @@
+name: Build and Push Docker Image (x64 / amd64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Docker image tag version (default: from package.json)"
+        required: false
+        type: string
+      promote_latest:
+        description: "Tag as latest"
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: docker-amd64-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKERHUB_REPO: solomild/9router
+
+jobs:
+  build-and-push-amd64:
+    name: Build & Push x64 to Docker Hub
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve image version and tags
+        id: meta
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const inputTag = process.env.INPUT_TAG ? process.env.INPUT_TAG.trim() : '';
+          const refName = process.env.GITHUB_REF_NAME || '';
+
+          let version = inputTag;
+          if (!version) {
+            if (refName.startsWith('v')) {
+              version = refName.replace(/^v/, '');
+            } else {
+              version = pkg.version || 'latest';
+            }
+          }
+
+          const repo = process.env.DOCKERHUB_REPO;
+          const promoteLatest = process.env.PROMOTE_LATEST === 'true';
+
+          const tags = [
+            `${repo}:amd64`,
+            `${repo}:x64`,
+            `${repo}:${version}-amd64`,
+            `${repo}:${version}-x64`
+          ];
+
+          if (promoteLatest) {
+            tags.push(`${repo}:latest`);
+          }
+
+          const tagList = tags.join('\n');
+          console.log('Target tags:\n' + tagList);
+
+          const output = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(output, `version=${version}\n`);
+          fs.appendFileSync(output, `tags<<EOF\n${tagList}\nEOF\n`);
+          NODE
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          PROMOTE_LATEST: ${{ inputs.promote_latest && 'true' || 'false' }}
+          DOCKERHUB_REPO: ${{ env.DOCKERHUB_REPO }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push x64/amd64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=9router-amd64
+          cache-to: type=gha,mode=max,scope=9router-amd64
+          provenance: false
+          sbom: false
