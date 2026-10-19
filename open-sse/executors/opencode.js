@@ -263,6 +263,38 @@ function normalizeResponsesTools(body) {
   }
 }
 
+/**
+ * MiniMax rejects requests whose function tool parameters are empty or lack properties
+ * with 400: "invalid params, function parameters is empty (2013)". Inject an optional
+ * compatibility placeholder property when properties is empty so MiniMax accepts the schema.
+ * Note: Never add the placeholder to `required` array.
+ */
+export function sanitizeMinimaxTools(body) {
+  if (!body || typeof body !== "object" || !Array.isArray(body.tools)) return;
+  for (const tool of body.tools) {
+    if (!tool || typeof tool !== "object" || Array.isArray(tool)) continue;
+    const target = (tool.function && typeof tool.function === "object" && !Array.isArray(tool.function))
+      ? tool.function
+      : tool;
+    let params = target.parameters;
+    if (!params || typeof params !== "object" || Array.isArray(params)) {
+      params = { type: "object", properties: {} };
+      target.parameters = params;
+    }
+    const props = params.properties;
+    const isEmpty = !props || typeof props !== "object" || Array.isArray(props) || Object.keys(props).length === 0;
+    if (isEmpty) {
+      params.type = params.type || "object";
+      params.properties = {
+        _placeholder: {
+          type: "string",
+          description: "Compatibility parameter for models requiring non-empty schema; leave empty or omit.",
+        },
+      };
+    }
+  }
+}
+
 function sanitizeResponsesItems(body) {
   if (!Array.isArray(body.input)) return;
   body.input = body.input.filter((item) => {
@@ -369,6 +401,9 @@ export class OpenCodeExecutor extends BaseExecutor {
       applyFingerprintTools(body, true);
     } else if (body && typeof body === "object") {
       applyFingerprintTools(body, false);
+    }
+    if (/minimax/i.test(model || body?.model || "")) {
+      sanitizeMinimaxTools(body);
     }
     return injectReasoningContent({ provider: this.provider, model, body });
   }
