@@ -26,7 +26,9 @@ env:
 jobs:
   build-and-push-arm64:
     name: Build & Push ARM64 to Docker Hub
-    runs-on: ubuntu-24.04-arm
+    # Native ARM runner label family; `ubuntu-latest` migration (actions/runner-images#14748)
+    # does not cover `-arm` labels, so this is pinned explicitly.
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 60
     permissions:
       contents: read
