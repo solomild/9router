@@ -8,6 +8,7 @@ import { buildClineHeaders } from "../shared/clineAuth.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
+import { isMinimaxModel, sanitizeMinimaxTools } from "../utils/minimaxTools.js";
 import { extractClaudeSessionIdFromUserId } from "../utils/claudeCloaking.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
@@ -89,6 +90,10 @@ export class DefaultExecutor extends BaseExecutor {
         delete transformed.client_metadata;
       }
       stripUnsupportedParams(this.provider, model, transformed);
+      // MiniMax answers 400 "invalid params, function parameters is empty (2013)"
+      // for any tool whose schema has no properties. Keyed on the model, not the
+      // provider, so reseller lanes (kc/kilocode, openrouter) are covered too.
+      if (isMinimaxModel(model, transformed)) sanitizeMinimaxTools(transformed);
     }
 
     return injectReasoningContent({ provider: this.provider, model, body: transformed });

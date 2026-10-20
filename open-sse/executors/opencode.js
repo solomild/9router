@@ -7,6 +7,7 @@ import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
 import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
+import { isMinimaxModel, sanitizeMinimaxTools } from "../utils/minimaxTools.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import {
   normalizeResponsesInput,
@@ -263,37 +264,11 @@ function normalizeResponsesTools(body) {
   }
 }
 
-/**
- * MiniMax rejects requests whose function tool parameters are empty or lack properties
- * with 400: "invalid params, function parameters is empty (2013)". Inject an optional
- * compatibility placeholder property when properties is empty so MiniMax accepts the schema.
- * Note: Never add the placeholder to `required` array.
- */
-export function sanitizeMinimaxTools(body) {
-  if (!body || typeof body !== "object" || !Array.isArray(body.tools)) return;
-  for (const tool of body.tools) {
-    if (!tool || typeof tool !== "object" || Array.isArray(tool)) continue;
-    const target = (tool.function && typeof tool.function === "object" && !Array.isArray(tool.function))
-      ? tool.function
-      : tool;
-    let params = target.parameters;
-    if (!params || typeof params !== "object" || Array.isArray(params)) {
-      params = { type: "object", properties: {} };
-      target.parameters = params;
-    }
-    const props = params.properties;
-    const isEmpty = !props || typeof props !== "object" || Array.isArray(props) || Object.keys(props).length === 0;
-    if (isEmpty) {
-      params.type = params.type || "object";
-      params.properties = {
-        _placeholder: {
-          type: "string",
-          description: "Compatibility parameter for models requiring non-empty schema; leave empty or omit.",
-        },
-      };
-    }
-  }
-}
+// The 2013 empty-tool-schema shim lives in utils/minimaxTools.js so every lane
+// serving a MiniMax model (opencode free tier, openrouter resellers such as
+// kc/kilocode, direct api.minimax.io) gets it. Re-exported here for callers
+// that already import it from this module.
+export { sanitizeMinimaxTools };
 
 function sanitizeResponsesItems(body) {
   if (!Array.isArray(body.input)) return;
