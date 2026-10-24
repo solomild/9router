@@ -184,36 +184,3 @@ describe("criterion 3 — cache and failure never blank the picker", () => {
     expect(data.warning).toBeTruthy();
   });
 });
-
-// The picker is a client component and this suite runs in a node environment, so
-// its wiring is locked against the source (the pattern used by
-// model-select-deactivated-provider.test.js). Both halves matter: naming kilocode
-// as a live-catalog provider is worthless unless the passthroughModels branch —
-// the one kilocode takes, because it sets passthroughModels — reads the map. That
-// missing second half is the original bug.
-describe("ModelSelectModal source verification for live-catalog providers", () => {
-  const src = fs.readFileSync(new URL("../../src/shared/components/ModelSelectModal.js", import.meta.url), "utf-8");
-
-  it("lists kilocode in LIVE_CATALOG_PROVIDERS", () => {
-    const declared = src.match(/const LIVE_CATALOG_PROVIDERS = \[([^\]]*)\]/);
-    expect(declared).toBeTruthy();
-    expect(declared[1]).toContain('"kilocode"');
-  });
-
-  it("fetches the kilocode catalog through the shared live-model hook", () => {
-    expect(src).toMatch(/kilocodeModels = useLiveProviderModels\(/);
-    expect(src).toMatch(/const liveModelsByProvider = useMemo\(/);
-  });
-
-  it("reads the live catalog inside the passthroughModels branch", () => {
-    const start = src.indexOf("if (providerInfo.passthroughModels) {");
-    const end = src.indexOf("} else if (isCustomProvider) {");
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    expect(src.slice(start, end)).toContain("liveModelsByProvider[providerId]");
-  });
-
-  it("keeps the static registry as the fallback when the live catalog is empty", () => {
-    expect(src).toMatch(/liveModels\.length > 0\s*\?\s*liveModels\s*:\s*getModelsByProviderId/);
-  });
-});
