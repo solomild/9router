@@ -1,55 +1,25 @@
 import { NextResponse } from "next/server";
+import { resolveKiloCatalog } from "open-sse/services/kiloModels.js";
 
-const KILO_MODELS_URL = "https://api.kilo.ai/api/gateway/models";
-
-// In-memory cache with TTL
-let cachedModels = null;
-let cacheTimestamp = 0;
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
-
+// The catalog itself lives in open-sse/services/kiloModels.js — shared with
+// /api/providers/[id]/models so the picker and this list can never disagree
+// about which Kilo models exist. This route only narrows it to the free tier and
+// keeps the field names the provider page reads.
 export async function GET() {
-  const now = Date.now();
+  const { models, cached, warning } = await resolveKiloCatalog({ log: console });
 
-  // Return cached result if still valid
-  if (cachedModels && now - cacheTimestamp < CACHE_TTL_MS) {
-    return NextResponse.json({ models: cachedModels, cached: true });
-  }
-
-  try {
-    const res = await fetch(KILO_MODELS_URL, {
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!res.ok) {
-      throw new Error(`Kilo API returned ${res.status}`);
-    }
-
-    const json = await res.json();
-    const allModels = json.data || [];
-
-    const freeModels = allModels
-      .filter((m) => m.isFree === true)
-      .map((m) => ({
-        id: m.id,
-        name: m.name,
-        isFree: true,
-        context_length: m.context_length || 0,
-      }));
-
-    cachedModels = freeModels;
-    cacheTimestamp = now;
-
-    return NextResponse.json({ models: freeModels, cached: false });
-  } catch (error) {
-    // Return cached data if available, even if expired
-    if (cachedModels) {
-      return NextResponse.json({ models: cachedModels, cached: true, warning: error.message });
-    }
-
+  if (models.length === 0) {
     return NextResponse.json(
-      { models: [], error: `Failed to fetch Kilo models: ${error.message}` },
+      { models: [], error: `Failed to fetch Kilo models: ${warning || "empty catalog"}` },
       { status: 502 }
     );
   }
+
+  return NextResponse.json({
+    models: models
+      .filter((m) => m.isFree)
+      .map((m) => ({ id: m.id, name: m.name, isFree: true, context_length: m.contextLength || 0 })),
+    cached,
+    ...(warning ? { warning } : {}),
+  });
 }

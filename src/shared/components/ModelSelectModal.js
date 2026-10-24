@@ -26,7 +26,11 @@ const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(id => FREE_PROVI
 // Static registry stays as fallback when live fetch fails or is empty.
 // zed added in #4244: its backend customResolver already returns live models
 // but the frontend omitted it, hiding Zed entirely from the Combo picker.
-const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed"];
+// kilocode added because it proxies 400+ OpenRouter ids: its registry list is a
+// 8-entry fallback only, and being a passthrough provider it used to be built by
+// the passthrough branch below, which never asked for a live catalog — so every
+// dynamic id was unreachable in the picker while still perfectly routable.
+const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed", "kilocode"];
 
 // Fetch a provider's account-scoped catalog for every active connection and merge
 // the results. Entries collapse by model id on purpose: two connections of the
@@ -151,11 +155,24 @@ export default function ModelSelectModal({
   const clineConnectionIds = liveConnectionIdsByProvider.cline;
   const clinepassConnectionIds = liveConnectionIdsByProvider.clinepass;
   const zedConnectionIds = liveConnectionIdsByProvider.zed;
+  const kilocodeConnectionIds = liveConnectionIdsByProvider.kilocode;
 
   const cursorModels = useLiveProviderModels(isOpen, cursorConnectionIds, "Cursor");
   const clineModels = useLiveProviderModels(isOpen, clineConnectionIds, "Cline");
   const clinepassModels = useLiveProviderModels(isOpen, clinepassConnectionIds, "ClinePass");
   const zedModels = useLiveProviderModels(isOpen, zedConnectionIds, "Zed");
+  const kilocodeModels = useLiveProviderModels(isOpen, kilocodeConnectionIds, "Kilo Code");
+
+  // Every provider whose picker list comes from its live catalog, in one lookup,
+  // so the passthrough branch and the static branch below share a single source
+  // instead of each keeping its own provider-by-provider chain.
+  const liveModelsByProvider = useMemo(() => ({
+    cursor: cursorModels,
+    cline: clineModels,
+    clinepass: clinepassModels,
+    zed: zedModels,
+    kilocode: kilocodeModels,
+  }), [cursorModels, clineModels, clinepassModels, zedModels, kilocodeModels]);
 
   const fetchCombos = async () => {
     try {
@@ -319,6 +336,12 @@ export default function ModelSelectModal({
 
         // For typed kinds, only include hardcoded typed models (aliases are typically LLM-only and lack type info)
         let combined = aliasModels;
+        // A passthrough provider can still have an account-live catalog (Zed, Kilo
+        // Code). The registry list is a fallback that no static file can keep up
+        // with — Kilo alone proxies 400+ ids — so the live rows join the picker
+        // here too. Before this, passthrough providers never read liveModels and
+        // their dynamic ids were unreachable in the picker while still routable.
+        const liveModels = liveModelsByProvider[providerId] || [];
         if (kindFilter && TYPED_KINDS.has(kindFilter)) {
           const registeredTyped = customRegisteredModels.filter((m) => getModelKind(m) === kindFilter);
           combined = [
@@ -334,14 +357,20 @@ export default function ModelSelectModal({
             if (supports) combined = [{ id: providerId, name: providerInfo.name, value: alias }];
           }
         } else {
-          // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with user-added models
+          // LLM/null kind: merge live + hardcoded models (e.g. mimo-free → mimo-auto) with user-added models
           const registeredLlms = customRegisteredModels.filter((m) => !getModelKind(m) || getModelKind(m) === "llm");
           const seen = new Set([...aliasModels, ...registeredLlms].map((m) => m.value));
-          const hardcoded = getModelsByProviderId(providerId)
-            .filter((m) => !getModelKind(m) || getModelKind(m) === "llm")
-            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
-            .filter((m) => !seen.has(m.value));
-          combined = [...registeredLlms, ...aliasModels.filter((m) => !registeredLlms.some((registered) => registered.value === m.value)), ...hardcoded];
+          const catalogModels = [];
+          // Live first: a gateway retires ids, and the registry's copy of the same
+          // id may carry a stale name the live row has already corrected.
+          for (const m of [...liveModels, ...getModelsByProviderId(providerId)]) {
+            const kind = getModelKind(m);
+            if (kind && kind !== "llm") continue;
+            if (seen.has(`${alias}/${m.id}`)) continue;
+            seen.add(`${alias}/${m.id}`);
+            catalogModels.push({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, kind });
+          }
+          combined = [...registeredLlms, ...aliasModels.filter((m) => !registeredLlms.some((registered) => registered.value === m.value)), ...catalogModels];
         }
 
         if (combined.length > 0) {
@@ -406,7 +435,7 @@ export default function ModelSelectModal({
           hasModels: mergedModels.length > 0,
         };
       } else {
-        const liveModels = providerId === "cursor" ? cursorModels : providerId === "cline" ? clineModels : providerId === "clinepass" ? clinepassModels : providerId === "zed" ? zedModels : [];
+        const liveModels = liveModelsByProvider[providerId] || [];
         const hardcodedModels = liveModels.length > 0
           ? liveModels
           : getModelsByProviderId(providerId);
@@ -500,7 +529,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, liveModelsByProvider]);
 
   // Parse search query into structured query (regex, positive tokens, negative tokens)
   const parsedQuery = useMemo(() => parseSearchQuery(searchQuery), [searchQuery]);

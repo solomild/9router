@@ -36,11 +36,16 @@ export default {
     { id: "deepseek/deepseek-chat", name: "DeepSeek Chat" },
     { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner" },
   ],
-  // Kilo Code proxies the OpenRouter catalog (334 models at time of writing),
-  // so the hardcoded list above is only a fallback. Surfacing the full catalog
-  // requires a fetcher + passthroughModels, matching how openrouter.js is set up.
-  // Without these, only the 8 hardcoded models appear in the combo model picker,
-  // hiding dynamic models like cohere/north-mini-code:free and poolside/laguna-m.1:free.
+  // The list above is a fallback, not the real catalogue: Kilo Code proxies
+  // OpenRouter's namespace (400+ ids at the time of writing), which no static
+  // registry entry list can keep up with. The live catalogue is served by
+  // open-sse/services/kiloModels.js and reaches the model pickers through two
+  // wires that must both exist:
+  //   * a kilocode entry in PROVIDER_MODELS_CONFIG (/api/providers/[id]/models), and
+  //   * "kilocode" in LIVE_CATALOG_PROVIDERS (src/shared/components/ModelSelectModal.js).
+  // modelsFetcher alone only feeds the provider page's "Suggested free models"
+  // row — it never enumerates the picker — so dropping either wire hides every
+  // dynamic id (cohere/north-mini-code:free, poolside/laguna-m.1:free …).
   modelsFetcher: { url: "https://api.kilo.ai/api/gateway/models", type: "openrouter-free" },
   passthroughModels: true,
   oauth: {
