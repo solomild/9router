@@ -11,7 +11,6 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
-import { resolveKiloCatalog } from "open-sse/services/kiloModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
@@ -354,23 +353,6 @@ const PROVIDER_MODELS_CONFIG = {
       return {
         models: getStaticProviderModels("cursor"),
         warning: "Cursor returned no live models; falling back to static catalog.",
-      };
-    },
-  },
-  // Kilo Code (kc) proxies an OpenRouter-shaped catalogue that is public and
-  // account-independent, so no token is attached and one result serves every
-  // connection. The registry's 8 ids cannot name what the gateway actually
-  // serves (~400), and the route returns an empty list on failure so the picker
-  // keeps the static catalog as fallback.
-  kilocode: {
-    customResolver: async () => {
-      const result = await resolveKiloCatalog({ log: console });
-      if (result.models.length > 0) {
-        return { models: result.models, ...(result.warning ? { warning: result.warning } : {}) };
-      }
-      return {
-        models: [],
-        warning: result.warning || "Kilo returned no live models; falling back to static catalog.",
       };
     },
   },
