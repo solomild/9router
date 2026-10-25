@@ -11,12 +11,14 @@ import {
 
 const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeZenSession";
+const REQ_FIELD = "_opencodeZenRequest";
 const MAX_SESSION_LENGTH = 256;
 
 const RESPONSES_BASE_URL = "https://opencode.ai/zen/v1/responses";
 const MAX_TOOL_NAME_LEN = 128;
 const OPENCODE_UA = "opencode/1.18.31";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
+export const OPENCODE_REQUEST_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 // Free-tier fingerprint (mirrors opencode executor, PR #4132): upstream 403s
 // requests without the file-search quartet and without stream:true.
@@ -64,6 +66,50 @@ export function generateRequestId(timestamp = Date.now()) {
       .padStart(2, "0")
   ).join("");
   return `msg_${time}${unstableRandom()}`;
+}
+
+function deriveRequestId(sessionId, text) {
+  if (!text) return generateRequestId();
+  const digest = crypto
+    .createHash("sha256")
+    .update(`opencode-req\0${sessionId || ""}\0${text}`)
+    .digest();
+  const timeHex = digest.subarray(0, 6).toString("hex");
+  let randomPart = "";
+  for (let i = 6; i < 20; i++) {
+    randomPart += BASE62_CHARS[digest[i] % 62];
+  }
+  const id = `msg_${timeHex}${randomPart}`;
+  return OPENCODE_REQUEST_RE.test(id) ? id : generateRequestId();
+}
+
+function lastUserText(body) {
+  try {
+    if (!body || typeof body !== "object") return "";
+    const arr = Array.isArray(body.messages)
+      ? body.messages
+      : Array.isArray(body.input)
+        ? body.input
+        : null;
+    if (!arr) return typeof body.input === "string" ? body.input.slice(-600) : "";
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const msg = arr[i];
+      if (!msg) continue;
+      if (msg.role && msg.role !== "user") continue;
+      const content = msg.content;
+      if (typeof content === "string" && content.trim()) return content.trim().slice(-600);
+      if (Array.isArray(content)) {
+        const text = content
+          .map((part) => (typeof part === "string" ? part : part?.text || part?.input_text || ""))
+          .join(" ")
+          .trim();
+        if (text) return text.slice(-600);
+      }
+    }
+  } catch {
+    return "";
+  }
+  return "";
 }
 
 export function translateSessionId(sessionId, clientTool = "") {
@@ -254,9 +300,15 @@ export class OpenCodeZenExecutor extends DefaultExecutor {
       scope: "opencode-zen",
     });
 
+    const sessionId = native || translatedSession(resolved, clientTool);
+    const lower = {};
+    for (const [k, v] of Object.entries(sourceCredentials.rawHeaders || {})) lower[k.toLowerCase()] = v;
+    const downstreamReq = lower["x-opencode-request"];
+
     return {
       ...sourceCredentials,
-      [SESSION_FIELD]: native || translatedSession(resolved, clientTool),
+      [SESSION_FIELD]: sessionId,
+      [REQ_FIELD]: downstreamReq || deriveRequestId(sessionId, lastUserText(body)),
     };
   }
 
@@ -288,7 +340,9 @@ export class OpenCodeZenExecutor extends DefaultExecutor {
       // `Bearer public` + session/request ids succeed. Paid models keep the
       // connection key untouched.
       headers["Authorization"] = "Bearer public";
-      headers["x-opencode-request"] = generateRequestId();
+      const preparedReq = credentials?.[REQ_FIELD];
+      headers["x-opencode-request"] =
+        preparedReq || this.prepareRequestCredentials({ credentials })[REQ_FIELD];
     }
     return headers;
   }

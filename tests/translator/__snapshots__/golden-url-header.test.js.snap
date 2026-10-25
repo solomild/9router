@@ -1299,15 +1299,18 @@ exports[`GOLDEN buildHeaders (default executor providers) > opencode-zen → hea
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
+    "x-opencode-client": "desktop",
   },
   "nonStream": {
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
+    "x-opencode-client": "desktop",
   },
   "oauth": {
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
+    "x-opencode-client": "desktop",
   },
 }
 `;
